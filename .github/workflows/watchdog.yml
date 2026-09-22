@@ -1,0 +1,48 @@
+name: Watchdog
+
+on:
+  schedule:
+    - cron: "0 */3 * * *"
+  workflow_dispatch: {}
+
+# תזמון ותלויות נפרדים לגמרי מ-update.yml - הכלב שמירה לא צריך yfinance ולא
+# תלוי בהצלחת main.py, כדי שיוכל להתריע גם כשהצנרת הראשית שבורה לגמרי.
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: dashboard-watchdog
+  cancel-in-progress: false
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Check pipeline health
+        env:
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python watchdog.py
+
+      - name: Commit and push alert marker if changed
+        run: |
+          git config user.name "dashboard-watchdog"
+          git config user.email "actions@github.com"
+          git add data/last_watchdog_alert.txt
+          git diff --quiet --cached || git commit -m "Watchdog: record alert timestamp"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            echo "Push conflict, retrying ($i)..."
+            sleep 3
+          done
