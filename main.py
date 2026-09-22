@@ -34,15 +34,6 @@ def main():
     print("בונה את הדשבורד...")
     ticker_stats = build_dashboard.build(weather, prices, stock_ranges, fundamentals, news, exchange_rates)
 
-    print("בודק אם יש מה להתריע עליו...")
-    try:
-        if notify.send_alerts_if_needed(ticker_stats):
-            print("נשלח מייל התראה.")
-        else:
-            print("אין תנודות חריגות - לא נשלחה התראה.")
-    except Exception as e:
-        print(f"שליחת ההתראה נכשלה: {e}")
-
     print("בודק אם הגיע הזמן לסיכום היומי...")
     try:
         if notify.send_daily_summary_if_needed(ticker_stats):
