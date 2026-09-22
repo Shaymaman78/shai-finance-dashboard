@@ -71,18 +71,25 @@ def parse_alert(issue):
 
 
 def close_issue(repo, token, issue_number, comment):
-    requests.post(
+    """
+    מגיב וסוגר Issue. בודקים את קוד התשובה של שתי הקריאות (raise_for_status) -
+    בלי זה, כשל שקט בסגירה משאיר את ה-Issue פתוח ואת ההתראה מתפעילה שוב
+    בהרצה הבאה (בעוד 15 דקות), ושוב, ושוב - ספאם מיילים בלי סימן לתקלה.
+    """
+    comment_resp = requests.post(
         f"{API_BASE}/repos/{repo}/issues/{issue_number}/comments",
         headers=_headers(token),
         json={"body": comment},
         timeout=15,
     )
-    requests.patch(
+    comment_resp.raise_for_status()
+    close_resp = requests.patch(
         f"{API_BASE}/repos/{repo}/issues/{issue_number}",
         headers=_headers(token),
         json={"state": "closed"},
         timeout=15,
     )
+    close_resp.raise_for_status()
 
 
 def check_price_alerts():
@@ -113,9 +120,15 @@ def check_price_alerts():
             "ההתראה הזו נסגרה אוטומטית, אפשר לפתוח חדשה בדשבורד."
         )
         notify.send_email(f"שי פיננס - התראת מחיר: {alert['ticker']}", body)
-        close_issue(
-            repo, token, issue["number"],
-            f"✅ ההתראה הופעלה: {alert['ticker']} = ${current:.2f}. נשלח מייל, ה-Issue נסגר אוטומטית.",
-        )
+        try:
+            close_issue(
+                repo, token, issue["number"],
+                f"✅ ההתראה הופעלה: {alert['ticker']} = ${current:.2f}. נשלח מייל, ה-Issue נסגר אוטומטית.",
+            )
+        except Exception as e:
+            print(
+                f"אזהרה: נשלח מייל עבור {alert['ticker']} אבל סגירת Issue #{issue['number']} נכשלה ({e}) - "
+                "ייתכן שההתראה תופעל שוב בהרצה הבאה"
+            )
         triggered += 1
     return triggered

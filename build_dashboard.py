@@ -3,6 +3,7 @@
 """
 
 import csv
+import html
 import json
 import os
 from datetime import datetime
@@ -278,14 +279,14 @@ def build_market_summary(ticker_stats, news):
     news_items_html = ""
     if news:
         for item in news[:12]:
-            link_attr = f' href="{item["link"]}" target="_blank" rel="noopener"' if item.get("link") else ""
+            link_attr = f' href="{html.escape(item["link"])}" target="_blank" rel="noopener"' if item.get("link") else ""
             tag = "a" if item.get("link") else "span"
-            date_html = f'<span class="news-date">{item["date"]}</span>' if item.get("date") else ""
+            date_html = f'<span class="news-date">{html.escape(item["date"])}</span>' if item.get("date") else ""
             news_items_html += f"""
             <div class="news-item">
-              <span class="news-ticker">{item['ticker']}</span>
-              <{tag} class="news-title"{link_attr}>{item['title']}</{tag}>
-              <span class="news-publisher">{item.get('publisher', '')}</span>
+              <span class="news-ticker">{html.escape(item['ticker'])}</span>
+              <{tag} class="news-title"{link_attr}>{html.escape(item['title'])}</{tag}>
+              <span class="news-publisher">{html.escape(item.get('publisher', ''))}</span>
               {date_html}
             </div>
             """
@@ -342,6 +343,20 @@ def na_placeholder():
     return tr("אין נתון", "N/A", "N/D", "N/D", "غير متوفر")
 
 
+# תרגומי תוויות עמוד "הכסף שלי" - dict יחיד שגם בונה את row_labels (HTML) וגם
+# מיוצא כ-JSON ל-JS (MONEY_LABELS), כדי שמקרא גרף העוגה יתעדכן בהחלפת שפה
+# ולא יישאר קבוע בעברית כמו שהיה לפני התיקון.
+MONEY_LABEL_TRANSLATIONS = {
+    "general_savings": {"he": "כללי / חיסכון", "en": "General / Savings", "es": "General / Ahorros", "fr": "Général / Épargne", "ar": "عام / مدخرات"},
+    "ibi": {"he": "IBI (ברוקר)", "en": "IBI (broker)", "es": "IBI (bróker)", "fr": "IBI (courtier)", "ar": "IBI (وسيط)"},
+    "checking": {"he": "עובר ושב", "en": "Checking account", "es": "Cuenta corriente", "fr": "Compte courant", "ar": "حساب جاري"},
+    "sp500": {"he": "S&P 500", "en": "S&P 500", "es": "S&P 500", "fr": "S&P 500", "ar": "S&P 500"},
+    "cash": {"he": "מזומן", "en": "Cash", "es": "Efectivo", "fr": "Espèces", "ar": "نقد"},
+    "forex": {"he": 'חשבון מט"ח', "en": "Forex account", "es": "Cuenta forex", "fr": "Compte forex", "ar": "حساب فوركس"},
+    "bitcoin": {"he": "ביטקוין", "en": "Bitcoin", "es": "Bitcoin", "fr": "Bitcoin", "ar": "بيتكوين"},
+}
+
+
 def build_money_page(exchange_rates):
     """
     בונה עמוד "הכסף שלי" - נכסים כלליים (לא רק מניות) עם שדות עריכה ישירים בדף.
@@ -360,15 +375,7 @@ def build_money_page(exchange_rates):
         {"label_key": "bitcoin", "amount": 0, "currency": "USD"},
     ]
 
-    row_labels = {
-        "general_savings": tr("כללי / חיסכון", "General / Savings", "General / Ahorros", "Général / Épargne", "عام / مدخرات"),
-        "ibi": tr("IBI (ברוקר)", "IBI (broker)", "IBI (bróker)", "IBI (courtier)", "IBI (وسيط)"),
-        "checking": tr("עובר ושב", "Checking account", "Cuenta corriente", "Compte courant", "حساب جاري"),
-        "sp500": tr("S&P 500", "S&P 500", "S&P 500", "S&P 500", "S&P 500"),
-        "cash": tr("מזומן", "Cash", "Efectivo", "Espèces", "نقد"),
-        "forex": tr('חשבון מט"ח', "Forex account", "Cuenta forex", "Compte forex", "حساب فوركس"),
-        "bitcoin": tr("ביטקוין", "Bitcoin", "Bitcoin", "Bitcoin", "بيتكوين"),
-    }
+    row_labels = {key: tr_d(translations) for key, translations in MONEY_LABEL_TRANSLATIONS.items()}
 
     rates = exchange_rates or {}
     fallback_rates = {"USD": 3.7, "EUR": 4.0, "GBP": 4.7, "JPY": 0.025}
@@ -885,14 +892,11 @@ def build(weather_today, prices_today, stock_ranges, fundamentals=None, news=Non
         ]
     )
 
-    valid_pcts_glance = [s["pct"] for s in ticker_stats if s["pct"] is not None]
+    valid_stats_glance = [s for s in ticker_stats if s["pct"] is not None]
+    valid_pcts_glance = [s["pct"] for s in valid_stats_glance]
     glance_avg_pct = sum(valid_pcts_glance) / len(valid_pcts_glance) if valid_pcts_glance else None
-    glance_best = max(ticker_stats, key=lambda s: s["pct"]) if valid_pcts_glance else None
-    glance_worst = min(ticker_stats, key=lambda s: s["pct"]) if valid_pcts_glance else None
-    if glance_best is not None and glance_best["pct"] is None:
-        glance_best = None
-    if glance_worst is not None and glance_worst["pct"] is None:
-        glance_worst = None
+    glance_best = max(valid_stats_glance, key=lambda s: s["pct"]) if valid_stats_glance else None
+    glance_worst = min(valid_stats_glance, key=lambda s: s["pct"]) if valid_stats_glance else None
 
     def glance_pct_html(pct):
         if pct is None:
@@ -1915,6 +1919,7 @@ function weatherCodeToText(code) {{
 // --- מיקום (מזג אוויר + שעון) - חיפוש מתוך רשימת ערים מובנית (בלי תלות ברשת
 // לחיפוש עצמו, כדי לא להיתקע על חסימות CORS), נשמר בדפדפן ---
 const WORLD_CITIES_JS = {json.dumps(WORLD_CITIES)};
+const MONEY_LABELS = {json.dumps(MONEY_LABEL_TRANSLATIONS, ensure_ascii=False)};
 const LOCATION_STORAGE_KEY = 'shai_finance_location_v1';
 let currentTimezone = 'Asia/Jerusalem';
 let clockInterval = null;
@@ -1949,6 +1954,7 @@ function searchLocation() {{
   const query = inputEl.value.trim();
   if (locationSearchDebounce) clearTimeout(locationSearchDebounce);
   if (query.length === 0) {{
+    locationSearchToken++; // מבטל כל חיפוש חי שעדיין ממתין, כדי שתוצאה מאוחרת לא תדרוס את רשימת ברירת המחדל
     renderLocationResults(worldCitiesAsObjects().slice(0, 8));
     return;
   }}
@@ -2019,7 +2025,10 @@ async function selectLocation(lat, lon, timezone, name) {{
   await applyLocation(lat, lon, timezone, name);
 }}
 
+let applyLocationToken = 0;
+
 async function applyLocation(lat, lon, timezone, name) {{
+  const myToken = ++applyLocationToken;
   const nameEl = document.getElementById('weather-location-name');
   if (nameEl) nameEl.textContent = name;
   currentTimezone = timezone || 'Asia/Jerusalem';
@@ -2032,6 +2041,7 @@ async function applyLocation(lat, lon, timezone, name) {{
       '&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=' + encodeURIComponent(currentTimezone);
     const resp = await fetch(url);
     const data = await resp.json();
+    if (myToken !== applyLocationToken) return; // בחירת מיקום מאוחרת יותר כבר החליפה את זו - מתעלמים
     const daily = data.daily;
     if (daily && daily.temperature_2m_max && daily.temperature_2m_max.length) {{
       const tempMax = Math.round(daily.temperature_2m_max[0]);
@@ -2141,6 +2151,12 @@ function selectLanguage(lang) {{
   if (select) select.value = lang;
   updateDrawingInfo();
   if (currentModalTicker) renderModalChart();
+  // מרענן את מקרא גרף העוגה בעמוד "הכסף שלי" לשפה החדשה, בלי לקרוא ל-updateMoneyTotal()
+  // המלא (זה היה שומר וגם מוסיף רשומת היסטוריית שווי נטו חדשה - תופעת לוואי לא רצויה)
+  if (typeof computeMoneyBreakdown === 'function' && typeof drawAllocationPie === 'function') {{
+    const {{ totalILS, byAsset }} = computeMoneyBreakdown();
+    drawAllocationPie(byAsset, totalILS);
+  }}
 }}
 
 const CHART_PADDING = {{ top: 10, bottom: 10, left: 48, right: 8 }};
@@ -2449,10 +2465,11 @@ function updatePortfolioTotal() {{
   savePortfolioQty();
 }}
 
-const MONEY_LABELS_HE = {{
-  general_savings: 'כללי / חיסכון', ibi: 'IBI', checking: 'עובר ושב',
-  sp500: 'S&P 500', cash: 'מזומן', forex: 'מט"ח', bitcoin: 'ביטקוין',
-}};
+function moneyLabelFor(key) {{
+  const entry = MONEY_LABELS[key];
+  if (!entry) return key;
+  return entry[currentLanguage] || entry.he || key;
+}}
 // פלטה עברה בדיקת נגישות (validate_palette.py): רצועת בהירות, רוויה מינימלית,
 // הפרדה לעיוורי צבעים וניגודיות - עוברת PASS מלא במצב כהה ובהיר
 const ASSET_COLORS = ['#a3800c', '#3b6fc9', '#2e7d32', '#0097a7', '#b968e0', '#c62828', '#d97706'];
@@ -2614,7 +2631,7 @@ function drawAllocationPie(byAsset, totalILS) {{
     startAngle += sliceAngle;
 
     const pct = (value / totalILS) * 100;
-    const label = MONEY_LABELS_HE[key] || key;
+    const label = moneyLabelFor(key);
     const legendItem = document.createElement('div');
     legendItem.className = 'legend-item';
     legendItem.innerHTML = '<span class="legend-swatch" style="background:' + color + '"></span>' +
@@ -2626,9 +2643,17 @@ function drawAllocationPie(byAsset, totalILS) {{
 // --- היסטוריית שווי נטו ---
 const NET_WORTH_HISTORY_KEY = 'shai_finance_networth_history_v1';
 
+function localDateString(d) {{
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${{yyyy}}-${{mm}}-${{dd}}`;
+}}
+
 function recordNetWorthHistory(totalILS) {{
   try {{
-    const today = new Date().toISOString().slice(0, 10);
+    // תאריך מקומי של הדפדפן, לא UTC (toISOString) - אחרת עדכון בערב מאוחר יכול להירשם בטעות בתאריך של מחר
+    const today = localDateString(new Date());
     const raw = localStorage.getItem(NET_WORTH_HISTORY_KEY);
     let history = raw ? JSON.parse(raw) : [];
     const existingIdx = history.findIndex(h => h.date === today);

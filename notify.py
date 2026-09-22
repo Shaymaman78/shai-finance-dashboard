@@ -7,14 +7,15 @@
 
 import os
 import smtplib
-from datetime import datetime, timezone
+from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from zoneinfo import ZoneInfo
 
 import config
 
 PCT_ALERT_THRESHOLD = 5.0  # אחוז שינוי יומי שמעליו שולחים התראה
-DAILY_SUMMARY_UTC_HOUR = 20  # ~23:00 בישראל / סגירת שוק ארה"ב - שולחים בהרצה הראשונה אחרי השעה הזו (UTC)
+MARKET_CLOSE_HOUR_ET = 16  # שעת סגירת שוק ארה"ב (4pm) בזמן מקומי של ניו יורק - ZoneInfo מתחשב אוטומטית ב-DST (EDT/EST)
 LAST_SUMMARY_FILE = f"{config.DATA_DIR}/last_summary_date.txt"
 
 
@@ -67,7 +68,7 @@ def build_daily_summary(ticker_stats):
             continue
         pct = (current - entry) / entry * 100 if entry else 0
         qty = config.QUANTITIES.get(ticker)
-        if qty:
+        if qty is not None:
             cost = entry * qty
             value = current * qty
             gain = value - cost
@@ -110,7 +111,7 @@ def build_daily_summary_html(ticker_stats, title):
         sign = "+" if diff >= 0 else ""
         qty = config.QUANTITIES.get(ticker)
 
-        if qty:
+        if qty is not None:
             cost = entry * qty
             value = current * qty
             gain = value - cost
@@ -218,14 +219,16 @@ def send_alerts_if_needed(ticker_stats):
 def send_daily_summary_if_needed(ticker_stats):
     """
     שולח סיכום יומי פעם אחת ביום, בהרצה הראשונה אחרי סגירת שוק ארה"ב.
+    משתמש בזמן מקומי של ניו יורק (לא שעה קבועה ב-UTC) כדי שההתחשבנות תהיה
+    נכונה גם בשעון קיץ וגם בשעון חורף אמריקאי (ZoneInfo מטפל ב-DST אוטומטית).
     נשען על קובץ סמן (LAST_SUMMARY_FILE) כדי לא לשלוח פעמיים באותו יום,
     כי הסקריפט רץ כל 15 דקות.
     """
-    now = datetime.now(timezone.utc)
-    if now.hour < DAILY_SUMMARY_UTC_HOUR:
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    if now_et.hour < MARKET_CLOSE_HOUR_ET:
         return False
 
-    today_str = now.strftime("%Y-%m-%d")
+    today_str = now_et.strftime("%Y-%m-%d")
     last_sent = None
     if os.path.isfile(LAST_SUMMARY_FILE):
         with open(LAST_SUMMARY_FILE, encoding="utf-8") as f:

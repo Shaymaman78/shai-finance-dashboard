@@ -5,6 +5,13 @@ on:
     - cron: "*/15 * * * *"
   workflow_dispatch: {}
 
+# מבטיח שרק הרצה אחת של הוורקפלואו רצה בו-זמנית (מחכה בתור במקום לרוץ במקביל) -
+# בלי זה, הרצה שנמשכת יותר מ-15 דקות עלולה לחפוף להרצה הבאה ולגרום לשליחת
+# סיכום יומי כפול (שתי ההרצות בודקות את קובץ הסימון לפני שאחת מהן הספיקה לעדכן אותו).
+concurrency:
+  group: dashboard-update
+  cancel-in-progress: false
+
 permissions:
   contents: write
   issues: write
