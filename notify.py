@@ -8,6 +8,7 @@
 import os
 import smtplib
 from datetime import datetime, timezone
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 import config
@@ -87,10 +88,116 @@ def build_daily_summary(ticker_stats):
     return summary
 
 
-def send_email(subject, body):
-    address, password = _get_credentials()
-    msg = MIMEText(body, "plain", "utf-8")
+def build_daily_summary_html(ticker_stats, title):
+    """
+    כמו build_daily_summary, אבל כטבלת HTML מסודרת (במקום שורות טקסט) - קריאה בהרבה במייל.
+    """
+    rows_html = ""
+    total_value = 0.0
+    total_cost = 0.0
+    missing_qty = []
+
+    stats_by_ticker = {s["ticker"]: s for s in ticker_stats}
+    for ticker in config.TICKERS:
+        stat = stats_by_ticker.get(ticker)
+        entry = config.ENTRY_PRICES.get(ticker)
+        current = stat.get("latest_price") if stat else None
+        if entry is None or current is None:
+            continue
+        diff = current - entry
+        pct = (diff / entry) * 100 if entry else 0
+        color = "#2e7d32" if diff >= 0 else "#c62828"
+        sign = "+" if diff >= 0 else ""
+        qty = config.QUANTITIES.get(ticker)
+
+        if qty:
+            cost = entry * qty
+            value = current * qty
+            gain = value - cost
+            total_cost += cost
+            total_value += value
+            qty_cell = f"{qty:g}"
+            value_cell = f"${value:,.2f}"
+            gain_cell = f'<span style="color:{color}">{sign}{gain:,.2f}$</span>'
+        else:
+            missing_qty.append(ticker)
+            qty_cell = "—"
+            value_cell = "—"
+            gain_cell = "—"
+
+        rows_html += f"""
+        <tr>
+          <td style="padding:8px 10px;border-bottom:1px solid #333;font-weight:bold">{ticker}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #333">${entry:,.2f}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #333">${current:,.2f}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #333;color:{color}">{sign}{diff:,.2f}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #333;color:{color}">{sign}{pct:.2f}%</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #333">{qty_cell}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #333">{value_cell}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #333">{gain_cell}</td>
+        </tr>
+        """
+
+    total_row_html = ""
+    if total_cost:
+        total_gain = total_value - total_cost
+        total_pct = total_gain / total_cost * 100
+        total_color = "#2e7d32" if total_gain >= 0 else "#c62828"
+        total_sign = "+" if total_gain >= 0 else ""
+        total_row_html = f"""
+        <tr>
+          <td colspan="6" style="padding:10px;font-weight:bold;border-top:2px solid #666">סה"כ תיק</td>
+          <td style="padding:10px;font-weight:bold;border-top:2px solid #666">${total_value:,.2f}</td>
+          <td style="padding:10px;font-weight:bold;border-top:2px solid #666;color:{total_color}">{total_sign}{total_gain:,.2f}$ ({total_sign}{total_pct:.2f}%)</td>
+        </tr>
+        """
+
+    missing_note_html = ""
+    if missing_qty:
+        missing_note_html = f"""
+        <p style="color:#999;font-size:13px;margin-top:14px">
+          חסרה כמות עבור: {", ".join(missing_qty)} - שווי כולל ורווח/הפסד בדולרים לא כוללים אותן.
+        </p>
+        """
+
+    return f"""
+    <html dir="rtl">
+    <body style="background:#0a0a0a;color:#e8e8e8;font-family:Arial,sans-serif;padding:20px">
+      <h2 style="color:#fff;margin-bottom:4px">{title}</h2>
+      <table style="border-collapse:collapse;width:100%;font-size:14px;background:#121212">
+        <thead>
+          <tr style="background:#1a1a1a;text-align:right">
+            <th style="padding:8px 10px">מניה</th>
+            <th style="padding:8px 10px">מחיר כניסה</th>
+            <th style="padding:8px 10px">מחיר נוכחי</th>
+            <th style="padding:8px 10px">שינוי ($)</th>
+            <th style="padding:8px 10px">שינוי (%)</th>
+            <th style="padding:8px 10px">כמות</th>
+            <th style="padding:8px 10px">שווי כולל</th>
+            <th style="padding:8px 10px">רווח/הפסד</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows_html}
+          {total_row_html}
+        </tbody>
+      </table>
+      {missing_note_html}
+    </body>
+    </html>
+    """
+
+
+def send_email(subject, body, html=None):
+    if html:
+        msg = MIMEMultipart("alternative")
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+        msg.attach(MIMEText(html, "html", "utf-8"))
+    else:
+        msg = MIMEText(body, "plain", "utf-8")
     msg["Subject"] = subject
+
+    address, password = _get_credentials()
     msg["From"] = address
     msg["To"] = address
 
@@ -126,8 +233,10 @@ def send_daily_summary_if_needed(ticker_stats):
     if last_sent == today_str:
         return False
 
-    body = f"סיכום רווח/הפסד ליום {today_str}:\n\n" + build_daily_summary(ticker_stats)
-    send_email("שי פיננס - סיכום יומי", body)
+    title = f"סיכום רווח/הפסד ליום {today_str}"
+    body = f"{title}:\n\n" + build_daily_summary(ticker_stats)
+    html = build_daily_summary_html(ticker_stats, title)
+    send_email("שי פיננס - סיכום יומי", body, html=html)
 
     os.makedirs(config.DATA_DIR, exist_ok=True)
     with open(LAST_SUMMARY_FILE, "w", encoding="utf-8") as f:
