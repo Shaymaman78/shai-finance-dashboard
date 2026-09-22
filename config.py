@@ -36,6 +36,9 @@ QUANTITIES = {
     "TSLA": 6.09,
 }
 
+# ריפו ה-GitHub שמריץ את הדשבורד - לבניית קישור "הוסף התראת מחיר" (פותח טופס Issue מוכן)
+GITHUB_REPO = "Shaymaman78/shai-finance-dashboard"
+
 # מיקום למזג אוויר (חיפה כברירת מחדל - אפשר לשנות)
 LOCATION_NAME = "חיפה"
 LATITUDE = 32.7940

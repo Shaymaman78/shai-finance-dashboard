@@ -1804,6 +1804,7 @@ def build(weather_today, prices_today, stock_ranges, fundamentals=None, news=Non
         <option value="rsi">{tr("מיון: RSI", "Sort: RSI", "Orden: RSI", "Tri: RSI", "الترتيب: RSI")}</option>
       </select>
       <button class="lang-toggle" id="heatmap-toggle-btn" onclick="toggleHeatmapView()">🗺️ {tr("תצוגת חום", "Heatmap view", "Vista de mapa de calor", "Vue carte thermique", "عرض الخريطة الحرارية")}</button>
+      <a class="lang-toggle" href="https://github.com/{config.GITHUB_REPO}/issues/new?template=price-alert.yml" target="_blank" rel="noopener" style="text-decoration:none;display:inline-flex;align-items:center">🔔 {tr("הוסף התראת מחיר", "Add price alert", "Agregar alerta de precio", "Ajouter une alerte de prix", "إضافة تنبيه سعر")}</a>
     </div>
     <div class="heatmap-grid" id="heatmap-grid" style="display:none"></div>
     <div class="grid" id="stock-grid">

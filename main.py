@@ -6,6 +6,7 @@
 import fetch_data
 import build_dashboard
 import notify
+import price_alerts
 
 
 def main():
@@ -50,6 +51,13 @@ def main():
             print("עדיין לא הגיע זמן הסיכום היומי, או שכבר נשלח היום.")
     except Exception as e:
         print(f"שליחת הסיכום היומי נכשלה: {e}")
+
+    print("בודק התראות מחיר לפי דרישה (Issues מתויגים price-alert)...")
+    try:
+        triggered = price_alerts.check_price_alerts()
+        print(f"{triggered} התראות מחיר הופעלו." if triggered else "אין התראות מחיר שהתקיימו כרגע.")
+    except Exception as e:
+        print(f"בדיקת התראות המחיר נכשלה: {e}")
 
     print("סיימנו! פתח/י את dashboard.html בדפדפן כדי לראות את התוצאה.")
 

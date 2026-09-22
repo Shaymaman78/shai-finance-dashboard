@@ -1,0 +1,31 @@
+name: "🔔 התראת מחיר"
+description: "קבל מייל כשמניה מגיעה למחיר מסוים - לא חייב להיות אחת מהמניות בתיק שלך"
+title: "[התראת מחיר] "
+labels: ["price-alert"]
+body:
+  - type: input
+    id: ticker
+    attributes:
+      label: טיקר
+      description: סימול המניה (למשל AAPL, SNDK, NVDA)
+      placeholder: "AAPL"
+    validations:
+      required: true
+  - type: input
+    id: target_price
+    attributes:
+      label: מחיר יעד
+      description: המחיר בדולרים שעליו תרצה להתריע
+      placeholder: "150.00"
+    validations:
+      required: true
+  - type: dropdown
+    id: direction
+    attributes:
+      label: כיוון
+      description: להתריע כשהמחיר עולה מעל היעד, או יורד מתחתיו?
+      options:
+        - "מעל המחיר"
+        - "מתחת למחיר"
+    validations:
+      required: true
