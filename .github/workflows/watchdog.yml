@@ -39,10 +39,14 @@ jobs:
         run: |
           git config user.name "dashboard-watchdog"
           git config user.email "actions@github.com"
-          git add data/last_watchdog_alert.txt
-          git diff --quiet --cached || git commit -m "Watchdog: record alert timestamp"
-          for i in 1 2 3 4 5; do
-            git pull --rebase origin main && git push && break
-            echo "Push conflict, retrying ($i)..."
-            sleep 3
-          done
+          if [ -f data/last_watchdog_alert.txt ]; then
+            git add data/last_watchdog_alert.txt
+            git diff --quiet --cached || git commit -m "Watchdog: record alert timestamp"
+            for i in 1 2 3 4 5; do
+              git pull --rebase origin main && git push && break
+              echo "Push conflict, retrying ($i)..."
+              sleep 3
+            done
+          else
+            echo "No alert marker written (pipeline healthy) - nothing to commit."
+          fi
