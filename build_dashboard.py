@@ -178,6 +178,30 @@ def bi(he_text, en_text):
     return tr(he_text, en_text)
 
 
+def tr_attr(he, en, es=None, fr=None, ar=None):
+    """
+    כמו tr(), אבל לשימוש בתוך attribute (placeholder/title) ולא כתוכן אלמנט -
+    אי אפשר לשים שם <span> (זה שובר את ה-HTML), אז מחזירים רק את הטקסט העברי
+    הרגיל (escaped לשימוש ב-attribute), בתוספת JSON נפרד שה-JS יכול לקרוא כדי
+    להחליף שפה. משתמשים בזה עם attr_i18n(), ראו שם.
+    """
+    translations = {"he": he, "en": en, "es": es or en, "fr": fr or en, "ar": ar or en}
+    raw_json = json.dumps(translations, ensure_ascii=False)
+    escaped_json = raw_json.replace("&", "&amp;").replace('"', "&quot;")
+    escaped_he = he.replace("&", "&amp;").replace('"', "&quot;")
+    return escaped_he, escaped_json
+
+
+def attr_i18n(attr_name, he, en, es=None, fr=None, ar=None):
+    """
+    בונה זוג attributes לשימוש בתוך תג HTML: הערך ההתחלתי (בעברית) + data-i18n-<attr>
+    עם JSON לכל השפות, כדי שסקריפט החלפת השפה יוכל לעדכן גם placeholder/title
+    ולא רק תוכן טקסט רגיל. שימוש: <input {attr_i18n('placeholder', 'חפש...', 'Search...')}>
+    """
+    escaped_he, escaped_json = tr_attr(he, en, es, fr, ar)
+    return f'{attr_name}="{escaped_he}" data-i18n-{attr_name}="{escaped_json}"'
+
+
 def format_market_cap(value):
     if value is None:
         return "אין נתון"
@@ -1761,14 +1785,14 @@ def build(weather_today, prices_today, stock_ranges, fundamentals=None, news=Non
         <span>🌤️ <span id="weather-location-name">{config.LOCATION_NAME}</span>:</span>
         <span class="temp" id="weather-temp">{weather_today['temp_min']:.0f}°-{weather_today['temp_max']:.0f}°</span>
         <span id="weather-desc-display">{tr_d(weather_desc_dict)}</span>
-        <button class="location-search-btn" onclick="toggleLocationSearch()" title="{tr('שנה מיקום', 'Change location', 'Cambiar ubicación', 'Changer de lieu', 'تغيير الموقع')}">📍</button>
+        <button class="location-search-btn" onclick="toggleLocationSearch()" {attr_i18n('title', 'שנה מיקום', 'Change location', 'Cambiar ubicación', 'Changer de lieu', 'تغيير الموقع')}>📍</button>
       </div>
       <div class="clock-strip">
         🕐 <span id="clock-display">--:--:--</span>
         <span class="clock-tz-name" id="clock-tz-name">{config.LOCATION_NAME}</span>
       </div>
       <div class="location-search-box" id="location-search-box" style="display:none">
-        <input type="text" id="location-search-input" placeholder="{tr('חפש עיר...', 'Search city...', 'Buscar ciudad...', 'Rechercher une ville...', 'ابحث عن مدينة...')}" oninput="searchLocation()">
+        <input type="text" id="location-search-input" {attr_i18n('placeholder', 'חפש עיר...', 'Search city...', 'Buscar ciudad...', 'Rechercher une ville...', 'ابحث عن مدينة...')} oninput="searchLocation()">
         <div id="location-search-results"></div>
       </div>
       <select class="lang-toggle" id="lang-select" onchange="selectLanguage(this.value)">
@@ -1895,6 +1919,10 @@ const LOCATION_STORAGE_KEY = 'shai_finance_location_v1';
 let currentTimezone = 'Asia/Jerusalem';
 let clockInterval = null;
 
+function worldCitiesAsObjects() {{
+  return WORLD_CITIES_JS.map(c => ({{ name: c[0], country: c[1], latitude: c[2], longitude: c[3], timezone: c[4] }}));
+}}
+
 function toggleLocationSearch() {{
   const box = document.getElementById('location-search-box');
   if (!box) return;
@@ -1905,23 +1933,55 @@ function toggleLocationSearch() {{
     if (input) {{
       input.value = '';
       input.focus();
-      renderLocationResults(WORLD_CITIES_JS.slice(0, 8));
+      renderLocationResults(worldCitiesAsObjects().slice(0, 8));
     }}
   }}
 }}
 
+let locationSearchDebounce = null;
+let locationSearchToken = 0;
+
+// חיפוש חי מול Open-Meteo Geocoding API (אותו ספק שכבר משמש למזג האוויר) - מכסה כמעט
+// כל עיר בעולם, לא מוגבל לרשימת הערים המובנית. יש debounce כדי לא לירות בקשה על כל תו.
 function searchLocation() {{
   const inputEl = document.getElementById('location-search-input');
   if (!inputEl) return;
-  const query = inputEl.value.trim().toLowerCase();
+  const query = inputEl.value.trim();
+  if (locationSearchDebounce) clearTimeout(locationSearchDebounce);
   if (query.length === 0) {{
-    renderLocationResults(WORLD_CITIES_JS.slice(0, 8));
+    renderLocationResults(worldCitiesAsObjects().slice(0, 8));
     return;
   }}
-  const matches = WORLD_CITIES_JS.filter(c =>
-    c[0].toLowerCase().includes(query) || c[1].toLowerCase().includes(query)
-  ).slice(0, 10);
-  renderLocationResults(matches);
+  const resultsEl = document.getElementById('location-search-results');
+  if (resultsEl) resultsEl.innerHTML = `<div class="location-result-empty">${{tr_searching_text()}}</div>`;
+  locationSearchDebounce = setTimeout(() => doLiveLocationSearch(query), 300);
+}}
+
+async function doLiveLocationSearch(query) {{
+  const myToken = ++locationSearchToken;
+  try {{
+    const url = 'https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(query) +
+      '&count=10&language=' + currentLanguage + '&format=json';
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (myToken !== locationSearchToken) return; // תוצאה מאוחרת של חיפוש קודם - מתעלמים
+    const results = (data.results || []).map(r => ({{
+      name: r.name,
+      country: r.country || '',
+      latitude: r.latitude,
+      longitude: r.longitude,
+      timezone: r.timezone || 'UTC',
+    }}));
+    renderLocationResults(results);
+  }} catch (e) {{
+    console.error('שגיאה בחיפוש מיקום חי - נופל לרשימה המובנית', e);
+    if (myToken !== locationSearchToken) return;
+    const q = query.toLowerCase();
+    const fallback = worldCitiesAsObjects().filter(c =>
+      c.name.toLowerCase().includes(q) || c.country.toLowerCase().includes(q)
+    ).slice(0, 10);
+    renderLocationResults(fallback);
+  }}
 }}
 
 function renderLocationResults(cities) {{
@@ -1931,17 +1991,22 @@ function renderLocationResults(cities) {{
     resultsEl.innerHTML = `<div class="location-result-empty">${{tr_no_results_text()}}</div>`;
     return;
   }}
-  resultsEl.innerHTML = cities.map((c, i) => `<div class="location-result" data-idx="${{i}}">${{c[0]}}, ${{c[1]}}</div>`).join('');
+  resultsEl.innerHTML = cities.map((c, i) => `<div class="location-result" data-idx="${{i}}">${{c.name}}${{c.country ? ', ' + c.country : ''}}</div>`).join('');
   resultsEl.querySelectorAll('.location-result').forEach((el, i) => {{
     el.addEventListener('click', () => {{
       const c = cities[i];
-      selectLocation(c[2], c[3], c[4], c[0] + ', ' + c[1]);
+      selectLocation(c.latitude, c.longitude, c.timezone, c.name + (c.country ? ', ' + c.country : ''));
     }});
   }});
 }}
 
 function tr_no_results_text() {{
   const map = {{ he: 'אין תוצאות - נסה שם עיר אחר', en: 'No results - try another city name', es: 'Sin resultados - prueba otro nombre', fr: 'Aucun résultat - essayez un autre nom', ar: 'لا توجد نتائج - جرّب اسماً آخر' }};
+  return map[currentLanguage] || map.he;
+}}
+
+function tr_searching_text() {{
+  const map = {{ he: 'מחפש...', en: 'Searching...', es: 'Buscando...', fr: 'Recherche...', ar: 'جارٍ البحث...' }};
   return map[currentLanguage] || map.he;
 }}
 
@@ -2058,6 +2123,18 @@ function selectLanguage(lang) {{
     try {{
       const map = JSON.parse(el.getAttribute('data-i18n'));
       el.textContent = map[lang] || map.he || map.en || '';
+    }} catch (e) {{ /* אלמנט בלי תרגום תקין - משאירים כמו שהוא */ }}
+  }});
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {{
+    try {{
+      const map = JSON.parse(el.getAttribute('data-i18n-placeholder'));
+      el.placeholder = map[lang] || map.he || map.en || '';
+    }} catch (e) {{ /* אלמנט בלי תרגום תקין - משאירים כמו שהוא */ }}
+  }});
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {{
+    try {{
+      const map = JSON.parse(el.getAttribute('data-i18n-title'));
+      el.title = map[lang] || map.he || map.en || '';
     }} catch (e) {{ /* אלמנט בלי תרגום תקין - משאירים כמו שהוא */ }}
   }});
   const select = document.getElementById('lang-select');
