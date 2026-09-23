@@ -1,0 +1,38 @@
+name: "📊 עדכון תיק - הוספה/הסרה של מניה"
+description: "הוסף מניה חדשה לתיק שלך, או הסר מניה קיימת"
+title: "[עדכון תיק] "
+labels: ["portfolio-change"]
+body:
+  - type: dropdown
+    id: action
+    attributes:
+      label: פעולה
+      options:
+        - "הוסף מניה"
+        - "הסר מניה"
+    validations:
+      required: true
+  - type: input
+    id: ticker
+    attributes:
+      label: טיקר
+      description: סימול המניה (למשל AAPL, NVDA)
+      placeholder: "AAPL"
+    validations:
+      required: true
+  - type: input
+    id: entry_price
+    attributes:
+      label: מחיר כניסה למניה בודדת (רק אם מוסיפים)
+      description: בדולרים, למניה אחת - לא סה"כ. חובה אם בחרת "הוסף מניה".
+      placeholder: "150.00"
+    validations:
+      required: false
+  - type: input
+    id: quantity
+    attributes:
+      label: כמות מניות (רק אם מוסיפים - אופציונלי)
+      description: כמה מניות יש לך בפועל. אם משאירים ריק, המניה תוצג רק באחוזים בסיכומים.
+      placeholder: "10"
+    validations:
+      required: false

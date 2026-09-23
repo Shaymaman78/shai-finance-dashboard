@@ -2,41 +2,10 @@
 הגדרות הדשבורד - כאן משנים מה עוקבים אחריו, בלי לגעת בשאר הקוד.
 """
 
-# המניות/קרנות שעוקבים אחריהן
-TICKERS = ["AMZN", "BE", "GOOG", "IBM", "MRVL", "MU", "NASA", "NOK", "PLPC", "SNDK", "TSLA"]
+import json
+import os
 
-# מחיר הכניסה שלך לכל מניה (למניה בודדת, לא סה"כ) - לחישוב רווח/הפסד
-ENTRY_PRICES = {
-    "AMZN": 225.61,
-    "BE": 294.81,
-    "GOOG": 172.58,
-    "IBM": 260.03,
-    "MRVL": 278.90,
-    "MU": 1052.52,
-    "NASA": 36.52,
-    "NOK": 14.65,
-    "PLPC": 376.68,
-    "SNDK": 1791.00,
-    "TSLA": 332.30,
-}
-
-# כמות מניות בפועל שיש לך לכל טיקר - לחישוב סיכום רווח/הפסד בדולרים אמיתיים (בסיכום היומי במייל).
-# מניה בלי כמות כאן תוצג באחוזים בלבד בסיכום, ולא תיכנס לסה"כ.
-QUANTITIES = {
-    "AMZN": 13.33,
-    "BE": 17,
-    "GOOG": 12.75,
-    "IBM": 19.88,
-    "MRVL": 18,
-    "MU": 5,
-    "NASA": 188,
-    "NOK": 349,
-    "PLPC": 10,
-    "SNDK": 1.8,
-    "TSLA": 6.09,
-}
-
-# ריפו ה-GitHub שמריץ את הדשבורד - לבניית קישור "הוסף התראת מחיר" (פותח טופס Issue מוכן)
+# ריפו ה-GitHub שמריץ את הדשבורד - לבניית קישורי Issue מוכנים (התראת מחיר, עדכון תיק)
 GITHUB_REPO = "Shaymaman78/shai-finance-dashboard"
 
 # מיקום למזג אוויר (חיפה כברירת מחדל - אפשר לשנות)
@@ -49,3 +18,37 @@ DATA_DIR = "data"
 STOCK_HISTORY_FILE = f"{DATA_DIR}/stock_history.csv"
 WEATHER_HISTORY_FILE = f"{DATA_DIR}/weather_history.csv"
 DASHBOARD_FILE = "dashboard.html"
+PORTFOLIO_FILE = f"{DATA_DIR}/portfolio.json"
+
+
+def load_portfolio():
+    """
+    טוען את התיק הנוכחי מקובץ JSON: {"TICKER": {"entry_price": ..., "quantity": ...}, ...}.
+    זה מקור האמת היחיד לרשימת המניות שעוקבים אחריהן - נטען מחדש מהדיסק בכל קריאה
+    (לא נשמר בזיכרון), כדי לשקף מיד שינוי שבוצע באותה הרצה (ראה portfolio_manager.py:
+    אפשר להוסיף/להסיר מניה דרך הדשבורד, והשינוי חל עוד באותה הרצה של main.py).
+    """
+    if not os.path.isfile(PORTFOLIO_FILE):
+        return {}
+    with open(PORTFOLIO_FILE, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_portfolio(portfolio):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(PORTFOLIO_FILE, "w", encoding="utf-8") as f:
+        json.dump(portfolio, f, ensure_ascii=False, indent=2)
+
+
+def get_tickers():
+    return list(load_portfolio().keys())
+
+
+def get_entry_price(ticker):
+    entry = load_portfolio().get(ticker)
+    return entry.get("entry_price") if entry else None
+
+
+def get_quantity(ticker):
+    entry = load_portfolio().get(ticker)
+    return entry.get("quantity") if entry else None

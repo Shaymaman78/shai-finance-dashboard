@@ -7,9 +7,19 @@ import fetch_data
 import build_dashboard
 import notify
 import price_alerts
+import portfolio_manager
 
 
 def main():
+    print("בודק בקשות עדכון תיק (Issues מתויגים portfolio-change)...")
+    try:
+        if portfolio_manager.apply_portfolio_changes():
+            print("התיק עודכן - הריצה הזו כוללת את השינוי.")
+        else:
+            print("אין בקשות עדכון תיק ממתינות.")
+    except Exception as e:
+        print(f"בדיקת עדכוני התיק נכשלה: {e}")
+
     print("שולף מזג אוויר...")
     weather = fetch_data.fetch_weather()
     fetch_data.append_weather_history(weather)

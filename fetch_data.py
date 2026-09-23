@@ -72,9 +72,9 @@ def fetch_weather():
 
 
 def fetch_stock_prices():
-    """שולף את מחיר הסגירה האחרון עבור כל טיקר ברשימת config.TICKERS."""
+    """שולף את מחיר הסגירה האחרון עבור כל טיקר בתיק הנוכחי (config.get_tickers())."""
     prices = {}
-    for ticker in config.TICKERS:
+    for ticker in config.get_tickers():
         try:
             hist = _fetch_history(ticker, period="1d", interval="1d")
             if _is_valid_close(hist):
@@ -108,7 +108,7 @@ def fetch_stock_ranges():
     """
     empty = {"dates": [], "open": [], "high": [], "low": [], "close": [], "volume": []}
     all_ranges = {}
-    for ticker in config.TICKERS:
+    for ticker in config.get_tickers():
         all_ranges[ticker] = {}
         for range_key, (period, interval) in RANGE_CONFIGS.items():
             try:
@@ -142,7 +142,7 @@ def fetch_stock_fundamentals():
     לא דעה של הכלי הזה או שלי.
     """
     fundamentals = {}
-    for ticker in config.TICKERS:
+    for ticker in config.get_tickers():
         try:
             info = yf.Ticker(ticker, session=_SESSION).info
             fundamentals[ticker] = {
@@ -164,7 +164,7 @@ def fetch_market_news(max_per_ticker=2):
     זה מקור אמיתי וחינמי - לא סנטימנט מרשתות חברתיות (זה דורש API בתשלום שאין לנו גישה אליו).
     """
     all_news = []
-    for ticker in config.TICKERS:
+    for ticker in config.get_tickers():
         try:
             stock = yf.Ticker(ticker, session=_SESSION)
             news_items = stock.news or []

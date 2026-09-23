@@ -575,7 +575,7 @@ def build_portfolio_view(ticker_stats):
     valid_pcts = []
     for stat in ticker_stats:
         ticker = stat["ticker"]
-        entry = config.ENTRY_PRICES.get(ticker)
+        entry = config.get_entry_price(ticker)
         current = stat.get("latest_price")
         if entry is None or current is None:
             continue
@@ -691,7 +691,7 @@ def build(weather_today, prices_today, stock_ranges, fundamentals=None, news=Non
     stock_cards_html = ""
     stock_charts_js = ""
     ticker_stats = []  # לסיכום השוק היומי - נאסף תוך כדי הלולאה
-    for ticker in config.TICKERS:
+    for ticker in config.get_tickers():
         ranges = stock_ranges.get(ticker, {})
         data = ranges.get("3M", empty_range)
         closes = data["close"]
@@ -851,7 +851,7 @@ def build(weather_today, prices_today, stock_ranges, fundamentals=None, news=Non
 
     # מכינים גרסה קומפקטית של כל הטווחים (רק המערכים הדרושים לציור, כדי לא לכפול נתונים בכל טיקר)
     all_ranges_compact = {}
-    for ticker in config.TICKERS:
+    for ticker in config.get_tickers():
         ranges = stock_ranges.get(ticker, {})
         all_ranges_compact[ticker] = {}
         for range_key, range_data in ranges.items():
@@ -874,7 +874,7 @@ def build(weather_today, prices_today, stock_ranges, fundamentals=None, news=Non
     portfolio_data = {}
     for stat in ticker_stats:
         ticker = stat["ticker"]
-        entry = config.ENTRY_PRICES.get(ticker)
+        entry = config.get_entry_price(ticker)
         current = stat.get("latest_price")
         if entry is not None and current is not None:
             portfolio_data[ticker] = {"entry": entry, "current": current}
@@ -1833,6 +1833,7 @@ def build(weather_today, prices_today, stock_ranges, fundamentals=None, news=Non
       </select>
       <button class="lang-toggle" id="heatmap-toggle-btn" onclick="toggleHeatmapView()">🗺️ {tr("תצוגת חום", "Heatmap view", "Vista de mapa de calor", "Vue carte thermique", "عرض الخريطة الحرارية")}</button>
       <a class="lang-toggle" href="https://github.com/{config.GITHUB_REPO}/issues/new?template=price-alert.yml" target="_blank" rel="noopener" style="text-decoration:none;display:inline-flex;align-items:center">🔔 {tr("הוסף התראת מחיר", "Add price alert", "Agregar alerta de precio", "Ajouter une alerte de prix", "إضافة تنبيه سعر")}</a>
+      <a class="lang-toggle" href="https://github.com/{config.GITHUB_REPO}/issues/new?template=portfolio-change.yml" target="_blank" rel="noopener" style="text-decoration:none;display:inline-flex;align-items:center">📊 {tr("עדכון תיק", "Update portfolio", "Actualizar cartera", "Mettre à jour le portefeuille", "تحديث المحفظة")}</a>
     </div>
     <div class="heatmap-grid" id="heatmap-grid" style="display:none"></div>
     <div class="grid" id="stock-grid">

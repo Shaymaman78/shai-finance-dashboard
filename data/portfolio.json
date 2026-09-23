@@ -1,0 +1,46 @@
+{
+  "AMZN": {
+    "entry_price": 225.61,
+    "quantity": 13.33
+  },
+  "BE": {
+    "entry_price": 294.81,
+    "quantity": 17
+  },
+  "GOOG": {
+    "entry_price": 172.58,
+    "quantity": 12.75
+  },
+  "IBM": {
+    "entry_price": 260.03,
+    "quantity": 19.88
+  },
+  "MRVL": {
+    "entry_price": 278.9,
+    "quantity": 18
+  },
+  "MU": {
+    "entry_price": 1052.52,
+    "quantity": 5
+  },
+  "NASA": {
+    "entry_price": 36.52,
+    "quantity": 188
+  },
+  "NOK": {
+    "entry_price": 14.65,
+    "quantity": 349
+  },
+  "PLPC": {
+    "entry_price": 376.68,
+    "quantity": 10
+  },
+  "SNDK": {
+    "entry_price": 1791.0,
+    "quantity": 1.8
+  },
+  "TSLA": {
+    "entry_price": 332.3,
+    "quantity": 6.09
+  }
+}

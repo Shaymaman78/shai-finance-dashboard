@@ -55,7 +55,7 @@ def check_alerts(ticker_stats):
 def build_daily_summary(ticker_stats):
     """
     בונה טקסט סיכום רווח/הפסד לפי מחיר כניסה מול מחיר נוכחי, בדולרים אמיתיים
-    לפי הכמות שהוגדרה ב-config.QUANTITIES. מניה בלי כמות מוצגת רק באחוזים.
+    לפי הכמות שהוגדרה בתיק (data/portfolio.json). מניה בלי כמות מוצגת רק באחוזים.
     """
     lines = []
     total_value = 0.0
@@ -64,12 +64,12 @@ def build_daily_summary(ticker_stats):
 
     for stat in ticker_stats:
         ticker = stat["ticker"]
-        entry = config.ENTRY_PRICES.get(ticker)
+        entry = config.get_entry_price(ticker)
         current = stat.get("latest_price")
         if entry is None or current is None:
             continue
         pct = (current - entry) / entry * 100 if entry else 0
-        qty = config.QUANTITIES.get(ticker)
+        qty = config.get_quantity(ticker)
         if qty is not None:
             cost = entry * qty
             value = current * qty
@@ -87,7 +87,7 @@ def build_daily_summary(ticker_stats):
         total_pct = total_gain / total_cost * 100
         summary += f"\n\nסה\"כ תיק (למניות עם כמות ידועה): {total_gain:+.2f}$ ({total_pct:+.2f}%) | שווי כולל {total_value:.2f}$"
     if missing_qty:
-        summary += f"\n\nחסרה כמות עבור: {', '.join(missing_qty)} - עדכן ב-config.QUANTITIES כדי שייכנסו לסה\"כ."
+        summary += f"\n\nחסרה כמות עבור: {', '.join(missing_qty)} - עדכן דרך כפתור \"עדכון תיק\" בדשבורד כדי שייכנסו לסה\"כ."
     return summary
 
 
@@ -101,9 +101,9 @@ def build_daily_summary_html(ticker_stats, title):
     missing_qty = []
 
     stats_by_ticker = {s["ticker"]: s for s in ticker_stats}
-    for ticker in config.TICKERS:
+    for ticker in config.get_tickers():
         stat = stats_by_ticker.get(ticker)
-        entry = config.ENTRY_PRICES.get(ticker)
+        entry = config.get_entry_price(ticker)
         current = stat.get("latest_price") if stat else None
         if entry is None or current is None:
             continue
@@ -111,7 +111,7 @@ def build_daily_summary_html(ticker_stats, title):
         pct = (diff / entry) * 100 if entry else 0
         color = "#2e7d32" if diff >= 0 else "#c62828"
         sign = "+" if diff >= 0 else ""
-        qty = config.QUANTITIES.get(ticker)
+        qty = config.get_quantity(ticker)
 
         if qty is not None:
             cost = entry * qty
