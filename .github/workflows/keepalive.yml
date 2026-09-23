@@ -1,0 +1,59 @@
+name: Keepalive
+
+# GitHub מכבה אוטומטית workflows מתוזמנים בריפו ציבורי אחרי 60 יום בלי שום commit.
+# ה-workflow העיקרי (update.yml) כבר עושה commit כל ~15 דקות (חותמת הזמן משתנה
+# בכל הרצה, אז תמיד יש שינוי לקומיט) וזה כבר אמור לאפס את הטיימר - אבל זו שכבת
+# ביטחון עצמאית לגמרי: אם update.yml ישבר לגמרי ויפסיק לעשות commit (מכל סיבה),
+# ה-workflow הפשוט הזה ימשיך להבטיח פעילות בריפו בלי שום תלות בקוד הראשי שלנו.
+on:
+  schedule:
+    - cron: "0 3 * * *" # פעם ביום - שוליים ענקיים מול סף 60 היום
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Commit a keepalive timestamp
+        run: |
+          git config user.name "dashboard-keepalive"
+          git config user.email "actions@github.com"
+          mkdir -p data
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > data/keepalive.txt
+          git add data/keepalive.txt
+          git diff --quiet --cached || git commit -m "Keepalive: prevent GitHub's 60-day scheduled-workflow auto-disable"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && break
+            echo "Push conflict, retrying ($i)..."
+            sleep 3
+          done
+
+      - name: Alert on keepalive failure
+        if: failure()
+        env:
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, smtplib
+          from email.mime.text import MIMEText
+          addr = os.environ.get("GMAIL_ADDRESS")
+          pwd = os.environ.get("GMAIL_APP_PASSWORD")
+          if not addr or not pwd:
+              raise SystemExit("no gmail creds available - cannot send failure alert")
+          body = "ה-keepalive workflow נכשל - שכבת ההגנה נגד כיבוי אוטומטי של GitHub לא פעילה כרגע.\n\nבדוק: " + os.environ.get("RUN_URL", "")
+          msg = MIMEText(body, "plain", "utf-8")
+          msg["Subject"] = "🚨 שי פיננס - ה-keepalive נכשל"
+          msg["From"] = addr
+          msg["To"] = addr
+          with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+              server.login(addr, pwd)
+              server.send_message(msg)
+          print("Failure alert sent.")
+          PYEOF
