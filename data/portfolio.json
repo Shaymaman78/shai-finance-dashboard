@@ -42,5 +42,9 @@
   "TSLA": {
     "entry_price": 332.3,
     "quantity": 6.09
+  },
+  "NVDA": {
+    "entry_price": 100.0,
+    "quantity": 5.0
   }
 }
