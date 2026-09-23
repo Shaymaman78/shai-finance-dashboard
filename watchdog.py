@@ -3,6 +3,12 @@
 (ראה .github/workflows/watchdog.yml), כדי שגם אם main.py נשבר לגמרי (למשל
 yfinance משנה API, או כל תקלה אחרת) עדיין תגיע התראה שמשהו לא בסדר.
 בכוונה לא מייבא yfinance/price_alerts - כדי שתקלה שם לא תפיל גם את הבודק הזה.
+
+בודק שתי שכבות נפרדות שכל אחת יכולה להישבר בלי שהשנייה תבחין בזה:
+1. שה-workflow שמעדכן את הנתונים (update.yml) באמת רץ בהצלחה לאחרונה.
+2. שה-Pages Deployment (הפרסום של index.html לאתר החי) באמת הצליח לאחרונה -
+   גם אם update.yml מצליח מושלם, פריסת Pages היא תהליך נפרד שיכול להיכשל
+   בפני עצמו (מכסה, שגיאת build וכו') בלי שאף בדיקה אחרת תבחין בזה.
 """
 
 import os
@@ -14,7 +20,7 @@ import config
 import notify
 
 API_BASE = "https://api.github.com"
-STALE_THRESHOLD_HOURS = 3  # אם אין הרצה מוצלחת של update.yml בפרק הזמן הזה - מתריעים
+STALE_THRESHOLD_HOURS = 3  # אם אין הרצה/פריסה מוצלחת בפרק הזמן הזה - מתריעים
 ALERT_COOLDOWN_HOURS = 12  # לא שולחים שוב אם כבר התרענו לאחרונה והבעיה עדיין נמשכת
 LAST_WATCHDOG_ALERT_FILE = f"{config.DATA_DIR}/last_watchdog_alert.txt"
 UPDATE_WORKFLOW_FILE = "update.yml"
@@ -43,18 +49,55 @@ def get_last_successful_update_time(repo, token):
     return datetime.fromisoformat(finished_at.replace("Z", "+00:00"))
 
 
+def get_pages_build_status(repo, token):
+    """מחזיר מידע על בניית ה-GitHub Pages האחרונה, או None אם השליפה עצמה נכשלה."""
+    url = f"{API_BASE}/repos/{repo}/pages/builds/latest"
+    resp = requests.get(url, headers=_headers(token), timeout=15)
+    if resp.status_code != 200:
+        return None
+    data = resp.json()
+    return {
+        "status": data.get("status"),
+        "error": (data.get("error") or {}).get("message"),
+        "updated_at": datetime.fromisoformat(data["updated_at"].replace("Z", "+00:00")),
+    }
+
+
 def check_watchdog():
     repo, token = _repo_and_token()
     if not token:
         return  # הרצה מקומית - אין GITHUB_TOKEN, מדלגים בשקט
 
-    last_success = get_last_successful_update_time(repo, token)
     now = datetime.now(timezone.utc)
-    if last_success is not None:
+    problems = []
+
+    last_success = get_last_successful_update_time(repo, token)
+    if last_success is None:
+        problems.append("לא נמצאה אף הרצה מוצלחת של עדכון הדשבורד עד כה.")
+    else:
         hours_since = (now - last_success).total_seconds() / 3600
-        if hours_since < STALE_THRESHOLD_HOURS:
-            print(f"תקין - ההרצה המוצלחת האחרונה הייתה לפני {hours_since:.1f} שעות.")
-            return
+        if hours_since >= STALE_THRESHOLD_HOURS:
+            problems.append(
+                f"עדכון הדשבורד (update.yml) לא רץ בהצלחה ב-{hours_since:.1f} השעות האחרונות "
+                f"(הרצה מוצלחת אחרונה: {last_success.strftime('%Y-%m-%d %H:%M UTC')})."
+            )
+
+    pages_info = get_pages_build_status(repo, token)
+    if pages_info is None:
+        problems.append("לא ניתן היה לבדוק את סטטוס פריסת GitHub Pages.")
+    else:
+        if pages_info["status"] == "errored":
+            problems.append(f"פריסת GitHub Pages (האתר החי) נכשלה: {pages_info['error']}")
+        else:
+            pages_hours_since = (now - pages_info["updated_at"]).total_seconds() / 3600
+            if pages_hours_since >= STALE_THRESHOLD_HOURS:
+                problems.append(
+                    f"פריסת GitHub Pages (האתר החי) לא התעדכנה ב-{pages_hours_since:.1f} השעות האחרונות."
+                )
+
+    if not problems:
+        print("תקין - גם update.yml וגם פריסת Pages עדכניים.")
+        return
 
     last_alert = None
     if os.path.isfile(LAST_WATCHDOG_ALERT_FILE):
@@ -67,17 +110,8 @@ def check_watchdog():
         print("הבעיה כבר דווחה לאחרונה - שומרים על cooldown, לא שולחים שוב.")
         return
 
-    if last_success is not None:
-        body = (
-            f"לא זוהתה הרצה מוצלחת של עדכון הדשבורד ב-{STALE_THRESHOLD_HOURS} השעות האחרונות.\n"
-            f"ההרצה המוצלחת האחרונה הייתה ב-{last_success.strftime('%Y-%m-%d %H:%M UTC')}.\n\n"
-            f"כדאי לבדוק את ה-Actions בריפו: https://github.com/{repo}/actions"
-        )
-    else:
-        body = (
-            "לא נמצאה אף הרצה מוצלחת של עדכון הדשבורד עד כה.\n\n"
-            f"כדאי לבדוק את ה-Actions בריפו: https://github.com/{repo}/actions"
-        )
+    body = "זוהו הבעיות הבאות בצנרת האוטומטית:\n\n" + "\n".join(f"- {p}" for p in problems)
+    body += f"\n\nכדאי לבדוק את ה-Actions בריפו: https://github.com/{repo}/actions"
     notify.send_email("⚠️ שי פיננס - הדשבורד לא מתעדכן", body)
     print("נשלחה התראת watchdog.")
 

@@ -50,3 +50,30 @@ jobs:
           else
             echo "No alert marker written (pipeline healthy) - nothing to commit."
           fi
+
+      # אם ה-watchdog עצמו נכשל (למשל שגיאת GitHub API), זו בעיה בפני עצמה שאף
+      # מנגנון אחר לא יתפוס - שכבת הגנה עצמאית שלא תלויה בשום קובץ אחר בריפו.
+      - name: Alert on watchdog failure
+        if: failure()
+        env:
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, smtplib
+          from email.mime.text import MIMEText
+          addr = os.environ.get("GMAIL_ADDRESS")
+          pwd = os.environ.get("GMAIL_APP_PASSWORD")
+          if not addr or not pwd:
+              raise SystemExit("no gmail creds available - cannot send failure alert")
+          body = "הרצת ה-watchdog עצמו נכשלה - אין כרגע שום בדיקת תקינות פעילה.\n\nבדוק: " + os.environ.get("RUN_URL", "")
+          msg = MIMEText(body, "plain", "utf-8")
+          msg["Subject"] = "🚨 שי פיננס - ה-watchdog נכשל"
+          msg["From"] = addr
+          msg["To"] = addr
+          with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+              server.login(addr, pwd)
+              server.send_message(msg)
+          print("Failure alert sent.")
+          PYEOF
