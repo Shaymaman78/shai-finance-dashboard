@@ -7,7 +7,7 @@
 
 import os
 import smtplib
-from datetime import datetime
+from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from zoneinfo import ZoneInfo
@@ -17,6 +17,8 @@ import config
 PCT_ALERT_THRESHOLD = 5.0  # אחוז שינוי יומי שמעליו שולחים התראה
 MARKET_CLOSE_HOUR_ET = 16  # שעת סגירת שוק ארה"ב (4pm) בזמן מקומי של ניו יורק - ZoneInfo מתחשב אוטומטית ב-DST (EDT/EST)
 LAST_SUMMARY_FILE = f"{config.DATA_DIR}/last_summary_date.txt"
+DATA_FAILURE_COOLDOWN_HOURS = 3  # לא שולחים שוב אם כבר התרענו על כשל נתונים לאחרונה והבעיה נמשכת
+LAST_DATA_FAILURE_ALERT_FILE = f"{config.DATA_DIR}/last_data_failure_alert.txt"
 
 
 def _get_credentials():
@@ -213,6 +215,42 @@ def send_alerts_if_needed(ticker_stats):
         return False
     body = "התראות מהדשבורד שלך:\n\n" + "\n".join(lines)
     send_email("שי פיננס - התראת מסחר", body)
+    return True
+
+
+def send_data_failure_alert_if_needed(valid_count, total_count):
+    """
+    מתריע מיד - לא מחכה ל-watchdog שרץ כל 3 שעות - אם אף מניה לא חזרה עם מחיר
+    תקין בהרצה הזו. זה קורה כש-yfinance/Yahoo Finance מחזירים תגובה חלקית (למשל
+    חסימה שקטה של ה-IP של GitHub Actions) בלי שהתהליך עצמו נכשל - ה-watchdog
+    לא תופס את זה כי מבחינתו ה-workflow "הצליח" (רץ עד הסוף בלי שגיאה).
+    """
+    if total_count == 0 or valid_count > 0:
+        return False
+
+    now = datetime.now(timezone.utc)
+    last_alert = None
+    if os.path.isfile(LAST_DATA_FAILURE_ALERT_FILE):
+        with open(LAST_DATA_FAILURE_ALERT_FILE, encoding="utf-8") as f:
+            try:
+                last_alert = datetime.fromisoformat(f.read().strip())
+            except ValueError:
+                last_alert = None
+    if last_alert is not None and (now - last_alert).total_seconds() / 3600 < DATA_FAILURE_COOLDOWN_HOURS:
+        return False
+
+    body = (
+        f"כל {total_count} המניות חזרו בלי מחיר תקין בהרצה הזו (ריק או NaN).\n\n"
+        "כנראה חסימה זמנית או תגובה חלקית מ-Yahoo Finance (קורה לפעמים ל-IP-ים "
+        "של שירותי CI כמו GitHub Actions) - לא תקלה בקוד עצמו, וה-workflow עדיין "
+        "\"הצליח\" מבחינת GitHub, לכן ה-watchdog לא תפס את זה.\n\n"
+        "הדשבורד התעדכן אבל עם נתונים חסרים לכל המניות. אם זה נמשך כמה שעות, כדאי לבדוק ידנית."
+    )
+    send_email("⚠️ שי פיננס - שליפת מחירים נכשלה לגמרי", body)
+
+    os.makedirs(config.DATA_DIR, exist_ok=True)
+    with open(LAST_DATA_FAILURE_ALERT_FILE, "w", encoding="utf-8") as f:
+        f.write(now.isoformat())
     return True
 
 

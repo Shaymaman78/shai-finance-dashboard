@@ -18,6 +18,13 @@ def main():
     prices = fetch_data.fetch_stock_prices()
     fetch_data.append_stock_history(prices)
 
+    valid_price_count = sum(1 for p in prices.values() if p is not None)
+    try:
+        if notify.send_data_failure_alert_if_needed(valid_price_count, len(prices)):
+            print("נשלחה התראה מיידית - כל המניות חזרו בלי מחיר תקין.")
+    except Exception as e:
+        print(f"שליחת התראת כשל הנתונים נכשלה: {e}")
+
     print("שולף היסטוריית מניות לכל טווחי הזמן (1D/1W/1M/3M/6M/1Y)...")
     print("(זה עשוי לקחת דקה-שתיים, יש הרבה קריאות רשת)")
     stock_ranges = fetch_data.fetch_stock_ranges()

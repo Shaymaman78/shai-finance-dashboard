@@ -3,17 +3,51 @@
 """
 
 import csv
+import math
 import os
+import time
 from datetime import datetime
 
 import requests
 import yfinance as yf
+from curl_cffi import requests as cffi_requests
 
 import config
+
+# סשן עם התחזות לדפדפן אמיתי (curl_cffi impersonate) - Yahoo Finance נוטה לחסום
+# או להחזיר תגובות חלקיות/NaN לבקשות "פשוטות" מסקריפטים, ובמיוחד מ-IP-ים של
+# שירותי CI כמו GitHub Actions. זה לא פותר חסימת IP מוחלטת, אבל מפחית משמעותית
+# את הסיכוי לתגובה חלקית שקטה (ראה גם _is_valid_close ו-_retry_fetch).
+_SESSION = cffi_requests.Session(impersonate="chrome")
 
 
 def ensure_data_dir():
     os.makedirs(config.DATA_DIR, exist_ok=True)
+
+
+def _is_valid_close(hist):
+    """בודק שיש שורות ושהמחיר האחרון הוא מספר אמיתי (לא NaN) - hist.empty לבדו לא מספיק:
+    Yahoo Finance לפעמים מחזיר שורה קיימת עם ערכי OHLC של NaN (תגובה חלקית/חסימה שקטה)."""
+    if hist.empty:
+        return False
+    try:
+        return not math.isnan(float(hist["Close"].iloc[-1]))
+    except (ValueError, TypeError):
+        return False
+
+
+def _fetch_history(ticker, period, interval, retries=2, delay=2.0):
+    """כמו yf.Ticker(ticker).history(...), עם סשן שמתחזה לדפדפן וניסיון חוזר קצר
+    אם התגובה ריקה/NaN - הרבה מקרי הכישלון של Yahoo Finance הם זמניים/רועשים."""
+    last_hist = None
+    for attempt in range(retries):
+        hist = yf.Ticker(ticker, session=_SESSION).history(period=period, interval=interval)
+        last_hist = hist
+        if _is_valid_close(hist):
+            return hist
+        if attempt < retries - 1:
+            time.sleep(delay)
+    return last_hist
 
 
 def fetch_weather():
@@ -42,13 +76,12 @@ def fetch_stock_prices():
     prices = {}
     for ticker in config.TICKERS:
         try:
-            stock = yf.Ticker(ticker)
-            hist = stock.history(period="1d")
-            if not hist.empty:
+            hist = _fetch_history(ticker, period="1d", interval="1d")
+            if _is_valid_close(hist):
                 prices[ticker] = round(float(hist["Close"].iloc[-1]), 2)
             else:
                 prices[ticker] = None
-                print(f"לא נמצאו נתונים עבור {ticker}")
+                print(f"לא נמצאו נתונים תקינים (ריק או NaN) עבור {ticker}")
         except Exception as e:
             print(f"שגיאה בשליפת {ticker}: {e}")
             prices[ticker] = None
@@ -79,8 +112,10 @@ def fetch_stock_ranges():
         all_ranges[ticker] = {}
         for range_key, (period, interval) in RANGE_CONFIGS.items():
             try:
-                stock = yf.Ticker(ticker)
-                hist = stock.history(period=period, interval=interval)
+                hist = _fetch_history(ticker, period=period, interval=interval)
+                # מסננים שורות עם NaN בכל אחת מעמודות ה-OHLC - Yahoo Finance לפעמים
+                # מחזיר שורות "קיימות" אבל עם ערכי מחיר חסרים (תגובה חלקית/חסימה שקטה)
+                hist = hist.dropna(subset=["Open", "High", "Low", "Close"])
                 if not hist.empty:
                     is_intraday = interval in ("1m", "5m", "15m", "30m", "1h")
                     date_format = "%Y-%m-%d %H:%M" if is_intraday else "%Y-%m-%d"
@@ -109,7 +144,7 @@ def fetch_stock_fundamentals():
     fundamentals = {}
     for ticker in config.TICKERS:
         try:
-            info = yf.Ticker(ticker).info
+            info = yf.Ticker(ticker, session=_SESSION).info
             fundamentals[ticker] = {
                 "pe_ratio": info.get("trailingPE"),
                 "market_cap": info.get("marketCap"),
@@ -131,7 +166,7 @@ def fetch_market_news(max_per_ticker=2):
     all_news = []
     for ticker in config.TICKERS:
         try:
-            stock = yf.Ticker(ticker)
+            stock = yf.Ticker(ticker, session=_SESSION)
             news_items = stock.news or []
             for item in news_items[:max_per_ticker]:
                 # מבנה ה-news של yfinance משתנה בין גרסאות - תומכים בשני הפורמטים המוכרים
@@ -185,8 +220,8 @@ def fetch_exchange_rates():
     """
     rates = {}
     try:
-        hist = yf.Ticker("ILS=X").history(period="1d")
-        usd_ils_rate = round(float(hist["Close"].iloc[-1]), 4) if not hist.empty else None
+        hist = _fetch_history("ILS=X", period="1d", interval="1d")
+        usd_ils_rate = round(float(hist["Close"].iloc[-1]), 4) if _is_valid_close(hist) else None
     except Exception as e:
         print(f"שגיאה בשליפת שער דולר-שקל: {e}")
         usd_ils_rate = None
@@ -197,8 +232,8 @@ def fetch_exchange_rates():
     cross_tickers = {"EUR": "EUR=X", "GBP": "GBP=X", "JPY": "JPY=X"}
     for currency, ticker_symbol in cross_tickers.items():
         try:
-            hist = yf.Ticker(ticker_symbol).history(period="1d")
-            per_usd = float(hist["Close"].iloc[-1]) if not hist.empty else None
+            hist = _fetch_history(ticker_symbol, period="1d", interval="1d")
+            per_usd = float(hist["Close"].iloc[-1]) if _is_valid_close(hist) else None
             if per_usd and usd_ils_rate:
                 rates[currency] = round(usd_ils_rate / per_usd, 4)
             else:
